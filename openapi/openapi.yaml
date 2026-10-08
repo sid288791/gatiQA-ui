@@ -1,0 +1,795 @@
+openapi: 3.0.3
+info:
+  title: gatiQA API
+  version: 1.0.0
+  description: >-
+    Backend contract for the gatiQA Phase 1 MVP. The UI consumes only this
+    contract. LLM keys and target-system credentials are held exclusively by
+    the backend; they are never part of any request or response payload.
+servers:
+  - url: /api/v1
+tags:
+  - name: evaluators
+  - name: profiles
+  - name: tests
+  - name: environments
+  - name: runs
+paths:
+  /evaluators:
+    get:
+      tags: [evaluators]
+      operationId: listEvaluators
+      summary: List registered evaluators available for profile composition.
+      responses:
+        '200':
+          description: Registered evaluators.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Evaluator'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /profiles:
+    get:
+      tags: [profiles]
+      operationId: listProfiles
+      summary: List evaluation profiles.
+      responses:
+        '200':
+          description: Profile summaries.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProfileSummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [profiles]
+      operationId: createProfile
+      summary: Create a new profile with an initial version.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfileVersionInput'
+      responses:
+        '201':
+          description: Created profile.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileDetail'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /profiles/{profileId}:
+    get:
+      tags: [profiles]
+      operationId: getProfile
+      summary: Get a profile with its full version history.
+      parameters:
+        - $ref: '#/components/parameters/ProfileId'
+      responses:
+        '200':
+          description: Profile detail with versions, newest first.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileDetail'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /profiles/{profileId}/versions:
+    post:
+      tags: [profiles]
+      operationId: createProfileVersion
+      summary: Save a new immutable version of a profile.
+      parameters:
+        - $ref: '#/components/parameters/ProfileId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfileVersionInput'
+      responses:
+        '201':
+          description: Newly created version.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileVersion'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /test-generations:
+    post:
+      tags: [tests]
+      operationId: generateTestDraft
+      summary: >-
+        Generate a structured test draft from a natural-language prompt.
+        Generation runs server-side; no LLM credentials cross this API.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TestGenerationRequest'
+      responses:
+        '200':
+          description: Generated draft, possibly requiring clarification.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestGenerationResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /test-generations/{draftId}/clarify:
+    post:
+      tags: [tests]
+      operationId: clarifyTestDraft
+      summary: Submit clarification answers and receive a revised draft.
+      parameters:
+        - $ref: '#/components/parameters/DraftId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClarifyRequest'
+      responses:
+        '200':
+          description: Revised draft.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestGenerationResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /tests:
+    get:
+      tags: [tests]
+      operationId: listTests
+      summary: List saved (approved) tests.
+      responses:
+        '200':
+          description: Saved tests.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SavedTest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [tests]
+      operationId: saveTest
+      summary: Persist an explicitly approved test spec.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaveTestRequest'
+      responses:
+        '201':
+          description: Saved test.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SavedTest'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /environments:
+    get:
+      tags: [environments]
+      operationId: listEnvironments
+      summary: List execution environments. Only `approved` ones may run tests.
+      responses:
+        '200':
+          description: Environments.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Environment'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /runs:
+    get:
+      tags: [runs]
+      operationId: listRuns
+      summary: Paginated run history with filters.
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 10 }
+        - name: state
+          in: query
+          schema:
+            $ref: '#/components/schemas/RunState'
+        - name: verdict
+          in: query
+          schema:
+            $ref: '#/components/schemas/Verdict'
+        - name: testId
+          in: query
+          schema: { type: string }
+        - name: environmentId
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Page of runs.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [runs]
+      operationId: startRun
+      summary: Start an asynchronous run over saved tests in an approved environment.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartRunRequest'
+      responses:
+        '202':
+          description: Accepted run.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Run'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /runs/summary:
+    get:
+      tags: [runs]
+      operationId: getRunSummary
+      summary: Aggregate verdict and execution-error counts.
+      responses:
+        '200':
+          description: Aggregate counts. Execution errors are reported separately from verdicts.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunSummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /runs/{runId}:
+    get:
+      tags: [runs]
+      operationId: getRun
+      summary: Get run state, verdict, evaluator results, and snapshot references.
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+      responses:
+        '200':
+          description: Run detail.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunDetail'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /runs/{runId}/rerun:
+    post:
+      tags: [runs]
+      operationId: rerunRun
+      summary: Start a new run reusing the immutable snapshots of a prior run.
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+      responses:
+        '202':
+          description: Newly accepted run.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Run'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+components:
+  parameters:
+    ProfileId:
+      name: profileId
+      in: path
+      required: true
+      schema: { type: string }
+    DraftId:
+      name: draftId
+      in: path
+      required: true
+      schema: { type: string }
+    RunId:
+      name: runId
+      in: path
+      required: true
+      schema: { type: string }
+  responses:
+    Unauthorized:
+      description: Missing or invalid credentials.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    Forbidden:
+      description: Authenticated but not permitted.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    NotFound:
+      description: Resource not found.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    ValidationError:
+      description: Request failed validation.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+  schemas:
+    ApiError:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string, example: VALIDATION_FAILED }
+        message: { type: string }
+        fieldErrors:
+          type: array
+          items:
+            type: object
+            required: [field, message]
+            properties:
+              field: { type: string }
+              message: { type: string }
+    EvaluatorConfigField:
+      type: object
+      required: [key, label, type, required]
+      properties:
+        key: { type: string }
+        label: { type: string }
+        type:
+          type: string
+          enum: [string, number, boolean, select]
+        required: { type: boolean }
+        description: { type: string }
+        options:
+          type: array
+          items: { type: string }
+        default: {}
+    Evaluator:
+      type: object
+      required: [id, name, version, configSchema]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        version: { type: string }
+        description: { type: string }
+        configSchema:
+          type: array
+          items:
+            $ref: '#/components/schemas/EvaluatorConfigField'
+    ProfileEvaluator:
+      type: object
+      required: [evaluatorId, weight, config]
+      properties:
+        evaluatorId: { type: string }
+        weight:
+          type: number
+          description: Percentage weight. All weights in a version must sum to 100.
+          minimum: 0
+          maximum: 100
+        config:
+          type: object
+          additionalProperties: true
+    ProfileVersion:
+      type: object
+      required: [version, createdAt, evaluators, passThreshold]
+      properties:
+        version: { type: integer }
+        createdAt: { type: string, format: date-time }
+        createdBy: { type: string }
+        evaluators:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProfileEvaluator'
+        passThreshold:
+          type: number
+          description: Weighted score at or above which a run passes (0-1).
+          minimum: 0
+          maximum: 1
+        inconclusiveThreshold:
+          type: number
+          description: Weighted score below which a run is inconclusive rather than failed (0-1).
+          minimum: 0
+          maximum: 1
+    ProfileVersionInput:
+      type: object
+      required: [evaluators, passThreshold]
+      properties:
+        name:
+          type: string
+          description: Required when creating a new profile; ignored for new versions.
+        description: { type: string }
+        evaluators:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/ProfileEvaluator'
+        passThreshold: { type: number, minimum: 0, maximum: 1 }
+        inconclusiveThreshold: { type: number, minimum: 0, maximum: 1 }
+    ProfileSummary:
+      type: object
+      required: [id, name, latestVersion, versionCount, updatedAt]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        latestVersion: { type: integer }
+        versionCount: { type: integer }
+        updatedAt: { type: string, format: date-time }
+    ProfileDetail:
+      type: object
+      required: [id, name, versions]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        versions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProfileVersion'
+    Expectation:
+      type: object
+      required: [id, kind, description, expected]
+      properties:
+        id: { type: string }
+        kind:
+          type: string
+          enum: [equals, contains, regex, numeric_range, schema_match, custom]
+        description: { type: string }
+        expected: {}
+        tolerance: { type: number }
+        evaluatorId: { type: string }
+    TestSpec:
+      type: object
+      required: [name, profileId, profileVersion, inputs, expectations]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        profileId: { type: string }
+        profileVersion: { type: integer }
+        inputs:
+          type: object
+          additionalProperties: true
+        expectations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Expectation'
+    ClarificationQuestion:
+      type: object
+      required: [id, question]
+      properties:
+        id: { type: string }
+        question: { type: string }
+        field: { type: string }
+        options:
+          type: array
+          items: { type: string }
+    MissingExpectation:
+      type: object
+      required: [id, hint]
+      properties:
+        id: { type: string }
+        hint: { type: string }
+        suggestedKind:
+          type: string
+          enum: [equals, contains, regex, numeric_range, schema_match, custom]
+    TestGenerationRequest:
+      type: object
+      required: [input]
+      properties:
+        input:
+          type: string
+          minLength: 1
+          description: Natural-language description of the test scenario.
+        profile:
+          type: object
+          required: [profileId, version, enabledEvaluators]
+          properties:
+            profileId: { type: string }
+            version: { type: integer }
+            enabledEvaluators:
+              type: array
+              items: { type: string }
+              description: Evaluator IDs from the profile to enable for this test.
+        approvedDefaults:
+          type: object
+          additionalProperties: { type: string }
+          description: Pre-approved default values applied to the generated draft.
+    TestGenerationResponse:
+      type: object
+      required: [status, draft, appliedDefaults, clarifications, missingExpectations, validationIssues, metadata]
+      properties:
+        status:
+          type: string
+          enum: [READY_FOR_REVIEW, FAILED, NEEDS_CLARIFICATION]
+          description: >-
+            READY_FOR_REVIEW: draft is complete for human review. FAILED: generation
+            could not complete. NEEDS_CLARIFICATION: answers are required before
+            the draft can be finalized.
+        draft:
+          type: object
+          required: [request, expectations, clarifications]
+          properties:
+            request:
+              type: object
+              additionalProperties: true
+              description: Structured request inputs extracted from the NL prompt.
+            expectations:
+              type: object
+              additionalProperties: true
+              description: Structured expectations the test will assert against.
+            clarifications:
+              type: array
+              items: {}
+              description: Clarifications embedded in the draft (may differ from top-level).
+        appliedDefaults:
+          type: array
+          items:
+            type: object
+            required: [field, value]
+            properties:
+              field: { type: string }
+              value: { type: string }
+          description: Defaults from approvedDefaults that were applied to the draft.
+        clarifications:
+          type: array
+          items:
+            $ref: '#/components/schemas/ClarificationQuestion'
+        missingExpectations:
+          type: array
+          items:
+            $ref: '#/components/schemas/MissingExpectation'
+        validationIssues:
+          type: array
+          items:
+            type: object
+            required: [code, message]
+            properties:
+              code: { type: string }
+              message: { type: string }
+          description: Issues that prevent the draft from being ready. Empty when status is READY_FOR_REVIEW.
+        metadata:
+          type: object
+          required: [provider, model, promptVersion]
+          properties:
+            provider: { type: string }
+            model: { type: string }
+            promptVersion: { type: string }
+    ClarifyRequest:
+      type: object
+      required: [answers]
+      properties:
+        answers:
+          type: array
+          items:
+            type: object
+            required: [questionId, answer]
+            properties:
+              questionId: { type: string }
+              answer: { type: string }
+        draft:
+          type: object
+          properties:
+            request:
+              type: object
+              additionalProperties: true
+            expectations:
+              type: object
+              additionalProperties: true
+        input:
+          type: string
+        profile:
+          type: object
+          required: [profileId, version, enabledEvaluators]
+          properties:
+            profileId: { type: string }
+            version: { type: integer }
+            enabledEvaluators:
+              type: array
+              items: { type: string }
+        approvedDefaults:
+          type: object
+          additionalProperties: { type: string }
+    SaveTestRequest:
+      type: object
+      required: [spec, approved]
+      properties:
+        draftId: { type: string }
+        spec:
+          $ref: '#/components/schemas/TestSpec'
+        approved:
+          type: boolean
+          description: Must be true. Tests are only persisted after explicit human approval.
+          enum: [true]
+    SavedTest:
+      type: object
+      required: [id, version, spec, approvedAt]
+      properties:
+        id: { type: string }
+        version: { type: integer }
+        spec:
+          $ref: '#/components/schemas/TestSpec'
+        approvedAt: { type: string, format: date-time }
+        approvedBy: { type: string }
+    Environment:
+      type: object
+      required: [id, name, status]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        status:
+          type: string
+          enum: [approved, pending, disabled]
+    RunState:
+      type: string
+      enum: [queued, running, succeeded, error]
+      description: Execution lifecycle. `error` means the run could not execute; it is not a verdict.
+    Verdict:
+      type: string
+      enum: [pass, fail, inconclusive]
+    EvaluatorResult:
+      type: object
+      required: [evaluatorId, evaluatorName, score, weight, verdict, evidence]
+      properties:
+        evaluatorId: { type: string }
+        evaluatorName: { type: string }
+        score:
+          type: number
+          description: Normalized 0-1.
+        weight: { type: number }
+        verdict:
+          $ref: '#/components/schemas/Verdict'
+        evidence:
+          type: object
+          required: [expected, actual]
+          properties:
+            expected: {}
+            actual: {}
+            notes: { type: string }
+    SnapshotRefs:
+      type: object
+      required: [profileRef, environmentRef, testRefs]
+      properties:
+        profileRef:
+          type: string
+          description: Immutable reference, e.g. profile-id@3.
+        environmentRef:
+          type: string
+          description: Immutable environment snapshot reference.
+        testRefs:
+          type: array
+          items: { type: string }
+          description: Immutable test snapshot references.
+    Run:
+      type: object
+      required: [id, state, verdict, environmentId, testIds, progress, createdAt]
+      properties:
+        id: { type: string }
+        state:
+          $ref: '#/components/schemas/RunState'
+        verdict:
+          anyOf:
+            - $ref: '#/components/schemas/Verdict'
+            - type: 'null'
+          description: Null until the run reaches `succeeded`.
+        environmentId: { type: string }
+        testIds:
+          type: array
+          items: { type: string }
+        progress:
+          type: number
+          minimum: 0
+          maximum: 1
+        createdAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time }
+    RunDetail:
+      allOf:
+        - $ref: '#/components/schemas/Run'
+        - type: object
+          required: [results, snapshots]
+          properties:
+            weightedScore: { type: number }
+            results:
+              type: array
+              items:
+                $ref: '#/components/schemas/EvaluatorResult'
+            snapshots:
+              $ref: '#/components/schemas/SnapshotRefs'
+            error:
+              type: object
+              properties:
+                code: { type: string }
+                message: { type: string }
+    RunPage:
+      type: object
+      required: [items, total, page, pageSize]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Run'
+        total: { type: integer }
+        page: { type: integer }
+        pageSize: { type: integer }
+    RunSummary:
+      type: object
+      required: [total, passed, failed, inconclusive, executionErrors, active]
+      properties:
+        total: { type: integer }
+        passed: { type: integer }
+        failed: { type: integer }
+        inconclusive: { type: integer }
+        executionErrors:
+          type: integer
+          description: Runs that errored during execution; counted separately from verdicts.
+        active:
+          type: integer
+          description: Runs currently queued or running.
+    StartRunRequest:
+      type: object
+      required: [testIds, environmentId]
+      properties:
+        testIds:
+          type: array
+          minItems: 1
+          items: { type: string }
+        environmentId: { type: string }
